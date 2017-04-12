@@ -1,3 +1,17 @@
+/*
+ *Filename generate_upgrade_file.c
+ *
+ *Description:generate a format file
+ *
+ *Author:rutk1t0r
+ *
+ *Date:2017.4.12
+ *
+ *GPL
+ *
+ *region and non_region erase algorithm referrence :http://projects.qi-hardware.com/svn/ingenic-linux-02os-linux-2-6-24-3/trunk/drivers/mtd/mtd-utils/flash_erase.c
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <malloc.h>
@@ -381,6 +395,7 @@ int main(int argc, char *argv[])
 		
 		if(check_sum_partition(upgrade_img_name, partition_name, &partition_offset, &partition_size)  != 0)
 		{
+			printf("check_sum calc error\n");
 			goto error;
 		}
 
