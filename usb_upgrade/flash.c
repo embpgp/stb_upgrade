@@ -1,7 +1,7 @@
 /*
  *Filename: flash.c
  *
- *Description:generate a format file
+ *Description:erase mtd flash and write data via ioctl 
  *
  *Author:rutk1t0r
  *
