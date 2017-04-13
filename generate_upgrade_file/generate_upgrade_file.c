@@ -1,3 +1,16 @@
+/*
+ *Filename: generate_upgrade_file.c
+ *
+ *Description:generate a format file
+ *
+ *Author:rutk1t0r
+ *
+ *Date:2017.4.12
+ *
+ *GPL
+ *
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
