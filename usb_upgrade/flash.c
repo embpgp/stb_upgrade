@@ -1,5 +1,5 @@
 /*
- *Filename generate_upgrade_file.c
+ *Filename: flash.c
  *
  *Description:generate a format file
  *
@@ -9,7 +9,7 @@
  *
  *GPL
  *
- *region and non_region erase algorithm referrence :http://projects.qi-hardware.com/svn/ingenic-linux-02os-linux-2-6-24-3/trunk/drivers/mtd/mtd-utils/flash_erase.c
+ *region and non_region erase algorithm reference :http://projects.qi-hardware.com/svn/ingenic-linux-02os-linux-2-6-24-3/trunk/drivers/mtd/mtd-utils/flash_erase.c
  */
 
 #include <stdio.h>

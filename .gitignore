@@ -1,0 +1,7 @@
+*.o
+*cfe.bin
+*loader
+*kernel
+*rootfs
+upgrade_file
+
