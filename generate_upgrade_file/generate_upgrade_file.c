@@ -19,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#define BLOCK_BUFFER_SIZE (128*1024)
 #define HASH_SCALE 7
 typedef struct partition
 {
@@ -51,9 +52,9 @@ unsigned int simple_hash(char *buffer, unsigned int size, unsigned char scale)
 	//per 4 bytes 
 	while(size > 0)
 	{
-		sum += (*p >> scale) || (*p << (sizeof(unsigned int)*8-scale));
-		size -= sizeof(unsigned int);
-		p ++;
+		sum += (((*p) >> scale) | ((*p) << (sizeof(unsigned int)*8-scale)));
+		size -= sizeof(unsigned int*);
+		
 	}
 	return sum;
 }
@@ -64,6 +65,7 @@ int main(int argc, char **argv)
 	int i = 0;
 	int target_fd = -1;
 	int input_fd = -1;
+	unsigned int sum = 0;
 	partition_section_info_t *section_header = NULL;
 	char *buffer = NULL;
 	unsigned int block_size = 128*1024;
@@ -78,7 +80,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 	printf("Please input the section_info,name,dev_name,img_file_name,version for example: cfe mtd0 cfe.bin 1\n");
-	for(; i<section_num; ++i)
+	for(i = 0; i<section_num; ++i)
 	{
 		printf("the %d info:",i);//don't let stackoverflow,so let the name shortly
 		scanf("%s %s %s %u", section_header[i].name, section_header[i].dev_name,\
@@ -105,20 +107,20 @@ int main(int argc, char **argv)
 	lseek(target_fd, sizeof(partition_section_info_t)*section_num+sizeof(ufh), SEEK_SET); //jmp the section region,pointer payload
 																		 //because we need calc the check_sum and write the payload at the same time
 	
-	buffer = (char*)malloc(block_size);
+	buffer = (char*)malloc(BLOCK_BUFFER_SIZE);
 	if(buffer == NULL)
 	{
 		perror("malloc memory error");
 		return -5;
 	}
-	memset(buffer, 0x00, block_size);
+	memset(buffer, 0x00, BLOCK_BUFFER_SIZE);
 	//full sections and write payloads
 	for(i = 0; i<section_num; ++i)
 	{
 		int readlen = 0;
 		int imglen = 0,total = 0,current = 0;
 		int write_cnt = 0;
-		unsigned int sum = 0;
+		sum = 0;
 		if((input_fd = open(section_header[i].img_name, O_RDONLY)) == -1)
 		{
 			perror("section file open error");
@@ -129,7 +131,8 @@ int main(int argc, char **argv)
 		
 		while(imglen)
 		{
-			if((readlen = read(input_fd, buffer, block_size)) != block_size)
+
+			if((readlen = read(input_fd, buffer, BLOCK_BUFFER_SIZE)) != BLOCK_BUFFER_SIZE)
 			{
 				if(readlen < block_size)
 				{
@@ -141,7 +144,8 @@ int main(int argc, char **argv)
 					return -9;
 				}
 			}
-			sum += simple_hash(buffer, block_size, HASH_SCALE); //calc check_sum
+			sum += simple_hash(buffer, BLOCK_BUFFER_SIZE, HASH_SCALE); //calc check_sum
+			//printf("***********************************check_sum:%x\n", sum);
 			if((write_cnt = write(target_fd, buffer, readlen)) != readlen)
 			{
 				perror("write target file error");
@@ -154,9 +158,11 @@ int main(int argc, char **argv)
 				
 			}
 			imglen -= readlen;
-			memset(buffer, 0x00, block_size); //must be 
+			memset(buffer, 0x00, BLOCK_BUFFER_SIZE); //must be 
+
 		}
 		section_header[i].check_sum = sum;
+
 		close(input_fd);
 		input_fd = -1;
 	}
@@ -166,5 +172,6 @@ int main(int argc, char **argv)
 	write(target_fd, section_header, sizeof(partition_section_info_t)*section_num);
 	close(target_fd);
 	free(section_header);
+	free(buffer);
 	return 0;
 }
