@@ -1,5 +1,5 @@
 CC = mipsel-linux-uclibc-gcc
-
+#CC = gcc
 flash: flash.o
 	$(CC) -o $@ $<
 
