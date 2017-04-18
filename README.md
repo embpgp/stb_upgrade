@@ -22,3 +22,10 @@ use `mdev -s` in Linux and write "/sbin/stbhotplug" to "/proc/sys/kernel/hotplug
 ## promise
 the dev_name (like mtd0...) shouldn't be error.  
 the name of target file is fixed under the USB root dir
+
+# Network
+
+1. use CS arch
+2. use blocks transport and blocks check_sums
+3. check_sums error will be transported again
+4. STB real-time reassemble packets and write data to MTD flash
