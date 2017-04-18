@@ -1,4 +1,4 @@
 cfe mtd0 cfe.bin 0
-loader mtd1 loader 0
+loader mtd1 loader 1
 kernel mtd2 kernel 1
 rootfs mtd3 squash_rootfs 1
