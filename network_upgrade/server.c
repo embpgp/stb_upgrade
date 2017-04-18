@@ -28,10 +28,29 @@
 
 #define HASH_SCALE 7
 #define UPGRADE_STR "upgrade_file"
-#define BLOCK_BUFFER_SIZE (128*1024)
+#define BLOCK_BUFFER_SIZE (1024)
 #define BLOCK_CHECK_SUM_SIZE 4
-
 #define TATOL_SIZE (BLOCK_BUFFER_SIZE+BLOCK_CHECK_SUM_SIZE)
+typedef struct partition
+{
+	char name[8];        //partition name,ie:cfe,loader,kernel,rootfs
+	char dev_name[8];    //mtd name,ie:mtd0,mtd1...
+	char img_name[16];   //img file name,ie:cfe.bin...
+	unsigned int version;
+	unsigned int size;   //img file size
+	unsigned int check_sum; //check_sum
+}partition_section_info_t;
+
+
+typedef struct upgrade_file_header
+{
+	unsigned int header_size;
+	unsigned int section_num;
+	unsigned int section_size;
+	
+}upgrade_file_header;
+
+
 // 32bit arch
 unsigned int simple_hash(char *buffer, unsigned int size, unsigned char scale)
 {
@@ -47,6 +66,7 @@ unsigned int simple_hash(char *buffer, unsigned int size, unsigned char scale)
 	{
 		sum += (((*p) >> scale) | ((*p) << (sizeof(unsigned int)*8-scale)));
 		size -= sizeof(unsigned int*);
+		p++;
 		
 	}
 	return sum;
@@ -67,6 +87,7 @@ int main(int argc , char * argv[])
 {  
 	 
     int bind_ret = -1;  
+    int on = 0;
     struct sockaddr_in sa_in = {0};  
     int listen_ret = -1;  
     int *accept_ret = NULL;  
@@ -91,7 +112,8 @@ int main(int argc , char * argv[])
             exit(-1);  
     }  
     printf("fd:%d\n",fd);  
-
+    on = 1;
+	setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on) ); //使得端口立即可用
     sa_in.sin_family = AF_INET;  
     sa_in.sin_port = htons(SERVER_PORT); //将端口转为网络序，赋给结构体  
     sa_in.sin_addr.s_addr = inet_addr(SERVER_IP);  //将点分十进制ip地址转换为二进制  
@@ -132,77 +154,155 @@ int main(int argc , char * argv[])
     return 0;  
 }  
   
+//不至于看起来太臃肿
+#define EXCEPTION_EXIT do\
+{\
+	free(accept_ret);  \
+    close(*accept_ret); \
+    free(buffer);\
+    free(ufh);\
+    free(section_header);\
+    close(ifd);\
+    pthread_exit(NULL);\
+}while(0);
+
 void *func(void *fd) //线程处理函数  
 {  
     int *accept_ret = (int *)fd;  
     char *buffer = NULL;  
     int recv_ret = -1; 
-    int fd = -1; 
+    int ifd = -1; 
     char *fname = UPGRADE_STR;
-    if((fd = open(fname, O_RDONLY)) == -1)
+    upgrade_file_header *ufh = NULL;
+    partition_section_info_t *section_header = NULL;
+    if((ifd = open(fname, O_RDONLY)) == -1)
     {
     	perror("open target file error");
     	exit(-1);
     }
     buffer = (char*)malloc(TATOL_SIZE);//buffer size + per package check_sum
-    memset(buffer, 0x00, TATOL_SIZE)
-    while(1)  
+    if(buffer == NULL)
+    {
+    	perror("malloc error");
+    	exit(-1);
+    }
+    memset(buffer, 0x00, TATOL_SIZE);
+    ufh = malloc(sizeof(*ufh));
+    memset(ufh, 0x00, sizeof(*ufh));
+    
+    
+    
+	if((recv_ret = recv(*accept_ret, buffer, TATOL_SIZE, 0) == -1))
+	{
+		perror("recv error");
+		EXCEPTION_EXIT
+
+	}
+	printf("CMD:%s\n", buffer);
+	if(strncmp(buffer, "start", sizeof("start")) != 0)
+	{
+		printf("error");
+		EXCEPTION_EXIT
+	}	
+	if(read(ifd, buffer, sizeof(upgrade_file_header)) == -1)
+	{
+		perror("read file header error");
+		EXCEPTION_EXIT
+
+	}
+	else
+	{
+		memcpy(ufh, buffer, sizeof(*ufh));
+		read(ifd, buffer+sizeof(*ufh), ufh->section_num*sizeof(partition_section_info_t));
+		section_header = malloc(ufh->section_num*sizeof(partition_section_info_t));
+		memcpy(section_header, buffer+sizeof(*ufh), ufh->section_num*sizeof(partition_section_info_t));
+		*(unsigned int*)&buffer[BLOCK_BUFFER_SIZE] = simple_hash(buffer, BLOCK_BUFFER_SIZE, HASH_SCALE);  //check_sum
+		if(send(*accept_ret, buffer, TATOL_SIZE, 0) == -1)
+		{
+			perror("send  error");
+			EXCEPTION_EXIT
+
+		}
+	}
+    for(int i = 0; i< ufh->section_num; ++i)
     {  
-            recv_ret = recv(*accept_ret,buffer,TATOL_SIZE,0);//程序先阻塞在这里等待客户端发的指令 
-            if(recv_ret < 0)  
-            {  
-                    perror("recv");  
-                    free(buffer);
-                    close(fd);
-                    exit(-1);  
-            }   
-            else if(recv_ret == 0)  //连接断开  
-            {  
-                   
-                    printf("close:%d,exiting subthread\n",*accept_ret);  
-                    free(accept_ret);  //释放动态分配的描述符空间  
-                    close(*accept_ret) //关闭读取描述符  
-                    free(buffer);
-                    close(fd);
-                    pthread_exit(NULL);//线程返回  
-            } 
+    	int offset = 0;
+		int size = 0;
+		int read_len = BLOCK_BUFFER_SIZE;
+		int current = 0;
+		//calc_check_sum = 0;
+		int j = 0;
+		int flag = 1;
+    	if(section_header[i].version == 1)
+    	{
+    		for(j = 0; j<i; ++j)
+			{
+				offset += section_header[j].size;
+			}
 
-            //continue send
-            if(strncmp(buffer, "OK", recv_ret) == 0)
-            {
-            	memset(buffer, 0x00, TATOL_SIZE);
-            	if(read(fd, buffer, BLOCK_BUFFER_SIZE) == -1)
-            	{
-            		perror("read file error");
-            		free(accept_ret);  //释放动态分配的描述符空间  
-                    close(*accept_ret) //关闭读取描述符  
-                    free(buffer);
-                    close(fd);
-                    pthread_exit(NULL);//线程返回 
+			size = section_header[i].size;
+			lseek(ifd, sizeof(upgrade_file_header)+sizeof(partition_section_info_t)*ufh->section_num+offset, SEEK_SET);
+			while(size || flag)
+			{
+				if(size < BLOCK_BUFFER_SIZE)
+				{
+					read_len = size;
+				}
+	            recv_ret = recv(*accept_ret,buffer,TATOL_SIZE,0);//程序先阻塞在这里等待客户端发的指令 
+	            if(recv_ret < 0)  
+	            {  
+	                    perror("recv");  
+	                    EXCEPTION_EXIT  
+	            }   
+	            else if(recv_ret == 0)  //连接断开  
+	            {  
+	                   
+	                    printf("close:%d,exiting subthread\n",*accept_ret);  
+	                    EXCEPTION_EXIT
+	                    
+	            } 
+	            //continue send
+	            printf("CMD:%s\n", buffer);
+	            if(strncmp(buffer, "continue", sizeof("continue")) == 0)
+	            {
+	            	memset(buffer, 0x00, TATOL_SIZE);
+	            	if((read(ifd, buffer, read_len)) == -1)
+	            	{
+	            		perror("read error");
+	            		EXCEPTION_EXIT
+	            	}
+	            	else
+	            	{
+	            		*(unsigned int*)&buffer[BLOCK_BUFFER_SIZE] = simple_hash(buffer, BLOCK_BUFFER_SIZE, HASH_SCALE);  //check_sum
+	            		if(send(*accept_ret, buffer, TATOL_SIZE, 0) == -1)
+	            		{
+	            			perror("send error");
+	            			EXCEPTION_EXIT
+	            		}
+	            		size -= read_len;
+	            		current += read_len;
+	            		printf("complete:%f%%\n", 100*(double)current/(double)section_header[i].size);
+	            	}
 
-            	}
-            	else
-            	{
-            		*(unsigned int*)&buffer[BLOCK_BUFFER_SIZE] = check_sum(buffer, BLOCK_BUFFER_SIZE, HASH_SCALE);  //check_sum
-            		if(send(*accept_ret, buffer, TATOL_SIZE, 0) == -1)
-            		{
-            			perror("read file error");
-            			free(accept_ret);  //释放动态分配的描述符空间  
-                   		close(*accept_ret) //关闭读取描述符  
-                  	    free(buffer);
-                        close(fd);
-                        pthread_exit(NULL);//线程返回 
+	            }
 
-            		}
-            	}
-            }//resend
-            else if(strncmp(buffer, "error", recv_ret) == 0)
-            {
+	            //resend
+	            else if(strncmp(buffer, "error", sizeof("error")) == 0)
+	            {
+	            	if(send(*accept_ret, buffer, TATOL_SIZE, 0) == -1)
+	            		{
+	            			perror("send error");
+	            			EXCEPTION_EXIT
+	            		}
 
-            }
-            send(*accept_ret, receivebuf, recv_ret, 0); 
-            printf("%d bytes from %d,%s\n",recv_ret,*accept_ret,receivebuf);  
-            memset(receivebuf,0,strlen(receivebuf));  
+	            }
+	            else if(strncmp(buffer, "complete", sizeof("complete")) == 0)
+	            {
+	            	flag = 0;
+	            }
+        	}
+             
+        } 
     }  
 }  
   
