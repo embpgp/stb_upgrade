@@ -197,7 +197,7 @@ unsigned int simple_hash(char *buffer, unsigned int size, unsigned char scale)
 	{
 		sum += (((*p) >> scale) | ((*p) << (sizeof(unsigned int)*8-scale)));
 		size -= sizeof(unsigned int*);
-		
+		p++;
 	}
 	return sum;
 }
